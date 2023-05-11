@@ -333,3 +333,94 @@ where users.id = t3.id
 												AND users.id <> 3) t2
 												group by t2.id) t4);
 
+-- --------------------------------------------------------------------------------------------------------------------------------------
+-- SEM5
+-- Задача 3 . Для базы lesson_4 решите 
+-- 1.создайте представление, в котором будут выводится все сообщения, в которых принимал участие пользователь с id= 1; 
+
+USE sem4;
+CREATE OR REPLACE VIEW view_message AS
+SELECT body
+FROM messages
+WHERE messages.from_user_id = 1 OR messages.to_user_id = 1;
+
+SELECT * FROM view_message;
+
+-- 2.найдите друзей у друзей пользователя с id = 1 и поместите выборку в представление; (решение задачи с помощью with) 
+ -- WITH работает в рамках одного запроса 
+ 
+ WITH friend_by_fried AS
+ (SELECT initiator_user_id
+ FROM friend_requests
+ WHERE target_user_id = '1' AND status = 'approved'
+ UNION 
+ SELECT target_user_id
+ FROM friend_requests
+ WHERE initiator_user_id = '1' AND status = 'approved')
+ SELECT * 
+ FROM friend_by_fried;
+ 
+-- 3.найдите друзей у друзей пользователя с id= 1. (решение задачи с помощью представления “друзья”)
+
+CREATE OR REPLACE VIEW friends AS
+WITH friend_by_fried AS
+(
+SELECT initiator_user_id
+FROM friend_requests
+WHERE target_user_id = 1 AND status = 'approved'
+UNION
+SELECT target_user_id
+FROM friend_requests
+WHERE initiator_user_id = 1 AND status = 'approved'
+)
+SELECT initiator_user_id
+FROM friend_requests
+WHERE target_user_id IN (SELECT * FROM friend_by_fried) AND status = 'approved'
+UNION
+SELECT target_user_id
+FROM friend_requests
+WHERE initiator_user_id IN (SELECT * FROM friend_by_fried) AND status = 'approved';
+SELECT * FROM friends;
+
+-- --------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- DZ5
+-- 1. Создайте представление, в которое попадет информация о пользователях (имя, фамилия, город и пол), которые не старше 20 лет.
+
+CREATE OR REPLACE VIEW user_less20 AS
+SELECT users.firstname, users.lastname, profile.hometown, profile.gender
+FROM users
+JOIN profile
+ON users.id = profile.user_id
+WHERE profile.user_id IN 
+(SELECT id -- выбор пользователей младше 20 лет
+FROM 
+(SELECT datediff(current_date(), profile.birthday)/365 AS age, profile.user_id AS id -- подсчет возрвстов всех пользователей
+FROM profile) t1
+WHERE t1.age < 20);
+
+SELECT * FROM user_less20;
+
+-- 2. Найдите кол-во, отправленных сообщений каждым пользователем и выведите ранжированный список пользователей, 
+-- указав имя и фамилию пользователя, количество отправленных сообщений и место в рейтинге (первое место у пользователя 
+-- с максимальным количеством сообщений) . (используйте DENSE_RANK)
+
+SELECT firstname, lastname, mes_cnt,
+DENSE_RANK() OVER(PARTITION BY t1.wind_1 ORDER BY t1.mes_cnt DESC) AS 'DENSE_RANK'
+FROM
+(SELECT DISTINCT from_user_id, 
+count(messages.body) OVER(PARTITION BY from_user_id ORDER BY from_user_id) AS mes_cnt,
+sum(messages.body) OVER(PARTITION BY from_user_id ORDER BY from_user_id) AS wind_1
+FROM messages) t1
+JOIN users 
+ON users.id = t1.from_user_id;
+
+-- 3. Выберите все сообщения, отсортируйте сообщения по возрастанию даты отправления (created_at)
+-- и найдите разницу дат отправления между соседними сообщениями, получившегося списка. (используйте LEAD или LAG)
+
+
+SELECT body, created_at, TIMEDIFF(created_at, t1.Lead) AS 'Difference date'
+FROM
+(SELECT body, created_at,
+LEAD(created_at) OVER(ORDER BY created_at DESC) AS 'Lead'
+FROM messages) t1;
+

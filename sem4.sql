@@ -424,3 +424,182 @@ FROM
 LEAD(created_at) OVER(ORDER BY created_at DESC) AS 'Lead'
 FROM messages) t1;
 
+-- __-----------------------------------------------------------------------------------------------------------------------------------------------------
+-- sem6
+
+-- Задача 1.  Создайте процедуру, которая выберет для одного пользователя 5 пользователей в случайной комбинации, 
+-- которые удовлетворяют хотя бы одному критерию: 
+-- 1) из одного города 
+-- 2) состоят в одной группе 
+-- 3) друзья друзей
+
+-- пользователи, которые состоят в одной группе
+SELECT uc2.user_id FROM users_communities uc1
+JOIN users_communities uc2 ON uc1.community_id = uc2.community_id
+WHERE uc1.user_id = 1 AND uc2.user_id != 1
+
+
+DROP PROCEDURE IF EXISTS select_users; 
+DELIMITER // 
+CREATE PROCEDURE select_users() 
+BEGIN  
+	SELECT initiator_user_id AS 'Users'
+    FROM friend_requests
+    WHERE target_user_id = 1 AND status = 'approved'
+    UNION 
+    SELECT target_user_id
+    FROM friend_requests
+    WHERE initiator_user_id = 1 AND status = 'approved';
+    SELECT user_id
+    FROM profile AS p
+    JOIN users_communities AS uc
+    ON profile.
+    
+ 
+END // 
+DELIMITER;
+-- Вызов процедуры: CALL procedure_name(argument_list)
+
+
+
+DELIMITER //
+CREATE PROCEDURE UserRand(
+  IN userID INT)
+COMMENT 'Выбирает предложения контактов'
+BEGIN
+  SELECT  users.id as USER_ID, users.firstname, users.lastname, hometown, communities.name as COMMUNITY
+  FROM users
+      JOIN profile JOIN users_communities JOIN communities 
+        ON users.id = profile.user_id AND users.id = users_communities.user_id AND users_communities.community_id = communities.id
+  WHERE (hometown = (SELECT hometown FROM profile WHERE user_id = userID) -- из одного города
+    OR communities.id IN (SELECT communities.id FROM users_communities WHERE user_id = userID)  -- схожие группы
+    OR users.id IN (SELECT target_user_id FROM friend_requests WHERE initiator_user_id = userID AND status = 'approved' UNION
+            SELECT initiator_user_id FROM friend_requests WHERE target_user_id = userID AND status = 'approved'))
+    AND users.id <> userID
+  GROUP BY USER_ID
+  ORDER BY RAND() LIMIT 5;
+END//
+DELIMITER ;
+
+
+-- Задача 2.  Создание функции, вычисляющей коэффициент популярности пользователя (по заявкам на дружбу – таблица friend_requests)
+
+DELIMITER //
+CREATE DEFINER=mysql`@% PROCEDURE `UserRank(
+  IN userID INT)
+    COMMENT 'Выбирает предложения контактов'
+BEGIN
+SELECT users.firstname, users.lastname, popKoeff as 'popKoeff.%'
+FROM (
+  SELECT target_user_id,  cnt * 100 / SUM(cnt) OVER() as popKoeff 
+  FROM (
+    SELECT target_user_id, COUNT(target_user_id) as cnt
+    FROM friend_requests
+    GROUP BY target_user_id) t1) t2
+  JOIN users 
+    ON users.id = t2.target_user_id
+WHERE t2.target_user_id = userID;
+END
+DELIMITER ;
+
+-- Задача 3.  Необходимо перебрать всех пользователей и тем пользователям, 
+-- у которых дата рождения меньше определенной даты обновить дату  рождения на  сегодняшнюю дату.  
+-- (реализация с помощью цикла)
+
+
+
+
+
+-- 1.Создайте таблицу users_old, аналогичную таблице users. Создайте процедуру,
+--  с помощью которой можно переместить любого (одного) пользователя из таблицы users в таблицу users_old.
+-- (использование транзакции с выбором commit или rollback – обязательно). 
+
+CREATE TABLE `users_old` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `firstname` varchar(50) DEFAULT NULL,
+  `lastname` varchar(50) DEFAULT NULL COMMENT 'Фамилия',
+  `email` varchar(120) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `id` (`id`),
+  UNIQUE KEY `email` (`email`)
+) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+
+DELIMITER //
+CREATE PROCEDURE UserArch(
+  IN userID INT)
+COMMENT 'Удаление пользователя в архив'
+BEGIN
+  START TRANSACTION; 
+  INSERT INTO users_old (id, firstname, lastname, email)   
+    SELECT id, firstname, lastname, email FROM users WHERE id = userID;  
+  DELETE FROM users WHERE id = userID;
+  COMMIT; 
+END//
+DELIMITER ;
+
+CALL UserArch(3);
+
+-- 2.Создайте хранимую функцию hello(), которая будет возвращать приветствие, в зависимости от текущего времени суток. 
+-- С 6:00 до 12:00 функция должна возвращать фразу "Доброе утро", 
+-- с 12:00 до 18:00 функция должна возвращать фразу "Добрый день", 
+-- с 18:00 до 00:00 — "Добрый вечер", с 00:00 до 6:00 — "Доброй ночи". 
+
+DELIMITER //
+CREATE PROCEDURE Hello(
+  OUT hello_str VARCHAR(50))
+COMMENT 'Удаление пользователя в архив'
+BEGIN
+SELECT IF(CURRENT_TIME >= TIME("6:00:00") AND CURRENT_TIME < TIME("12:00:00"), 'Доброе утро', 
+    IF(CURRENT_TIME >= TIME("12:00:00") AND CURRENT_TIME < TIME("18:00:00"), 'Добрый день',
+        IF(CURRENT_TIME >= TIME("18:00:00") AND CURRENT_TIME < TIME("00:00:00"), 'Добрый вечер',
+        IF(CURRENT_TIME >= TIME("00:00:00") AND CURRENT_TIME < TIME("06:00:00"), 'Доброй ночи','???')))) 
+        INTO hello_str;
+END//
+DELIMITER ;
+
+CALL hello(@hello_str);
+select @hello_str;
+
+-- 3.(по желанию)* Создайте таблицу logs типа Archive. 
+-- Пусть при каждом создании записи в таблицах users, communities и messages в таблицу logs помещается время и дата создания записи, название таблицы,
+
+CREATE TABLE logs (
+  record_datetime DATETIME NOT NULL,
+  table_name VARCHAR(45) NOT NULL)
+ENGINE = ARCHIVE
+DEFAULT CHARACTER SET = utf8mb4
+COLLATE = utf8mb4_0900_ai_ci
+COMMENT = 'лог транзакций';
+
+-- создание триггера для users
+DELIMITER //
+CREATE TRIGGER AfterInsert_Log    
+    AFTER INSERT
+         ON users FOR EACH ROW    
+         BEGIN       
+      INSERT INTO logs (record_datetime, table_name) VALUES (CURRENT_TIMESTAMP,'users');
+     END//   
+DELIMITER ;
+
+-- создание триггера для communities
+DELIMITER //
+CREATE TRIGGER AfterInsert_Log1    
+    AFTER INSERT
+         ON communities FOR EACH ROW    
+         BEGIN       
+      INSERT INTO logs (record_datetime, table_name) VALUES (CURRENT_TIMESTAMP,'communities');
+     END//   
+DELIMITER ;
+
+-- создание триггера для messages
+DELIMITER //  
+CREATE TRIGGER AfterInsert_Log2   
+    AFTER INSERT
+         ON messages FOR EACH ROW    
+         BEGIN       
+      INSERT INTO logs (record_datetime, table_name) VALUES (CURRENT_TIMESTAMP,'messages');
+     END//   
+DELIMITER ;
+
+INSERT INTO users (id,firstname,lastname,email) VALUES (11,'sd','as','sss@sss.ru'); -- проверка для users
